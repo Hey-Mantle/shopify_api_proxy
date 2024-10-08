@@ -1,6 +1,7 @@
 'use strict';
 
 const mysql = require('mysql2/promise');
+const gql = require('graphql-tag');
 
 const SHOPIFY_API_VERSION = '2024-10';
 
@@ -8,6 +9,7 @@ const ALLOWED_QUERIES = [
   'shop',
   'app',
   'oneTimePurchase',
+  'shopBillingPreferences',
 ];
 
 const ALLOWED_MUTATIONS = [
@@ -23,27 +25,22 @@ const ALLOWED_MUTATIONS = [
 
 const isOperationAllowed = (body) => {
   const parsedBody = typeof body === 'object' ? body : JSON.parse(body);
-  const operationName = parsedBody.operationName;
   const query = parsedBody.query;
-
-  const match = query.match(/^\s*(query|mutation)?\s*(\w+)?\s*{/);
-  if (!match) {
-    return false;
-  }
-
-  let [, operationType, queryName] = match;
-  operationType = operationType?.trim() || 'query';
-  queryName = queryName?.trim() || operationName;
-
-  if (operationType === 'query') {
-    return ALLOWED_QUERIES.some(allowedQuery => 
-      query.includes(`${allowedQuery}`));
-  } else if (operationType === 'mutation') {
-    const mutationName = queryName || query.match(/{?\s*(\w+)/)?.[1];
-    return ALLOWED_MUTATIONS.includes(mutationName);
-  }
-
-  return false;
+  const obj = gql`${query}`;
+  return obj.definitions
+    .filter(definition => definition.kind === 'OperationDefinition')
+    .every(definition => {
+      if (definition.operation === 'query') {
+        return definition.selectionSet.selections.every(selection =>
+          ALLOWED_QUERIES.some(allowedQuery => selection.name.value === allowedQuery)
+        );
+      } else if (definition.operation === 'mutation') {
+        return definition.selectionSet.selections.every(selection =>
+          ALLOWED_MUTATIONS.some(allowedMutation => selection.name.value === allowedMutation)
+        );
+      }
+      return false;
+    });
 };
 
 const buildResponse = (status, body, headers = {}) => {

@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const gql = require('graphql-tag');
 
 const SHOPIFY_API_VERSION = '2024-10';
 
@@ -21,6 +22,7 @@ const ALLOWED_QUERIES = [
   'shop',
   'app',
   'oneTimePurchase',
+  'shopBillingPreferences',
 ];
 
 const ALLOWED_MUTATIONS = [
@@ -36,27 +38,22 @@ const ALLOWED_MUTATIONS = [
 
 const isOperationAllowed = (body) => {
   const parsedBody = typeof body === 'object' ? body : JSON.parse(body);
-  const operationName = parsedBody.operationName;
   const query = parsedBody.query;
-
-  const match = query.match(/^\s*(query|mutation)?\s*(\w+)?\s*{/);
-  if (!match) {
-    return false;
-  }
-
-  let [, operationType, queryName] = match;
-  operationType = operationType?.trim() || 'query';
-  queryName = queryName?.trim() || operationName;
-
-  if (operationType === 'query') {
-    return ALLOWED_QUERIES.some(allowedQuery => 
-      query.includes(`${allowedQuery}`));
-  } else if (operationType === 'mutation') {
-    const mutationName = queryName || query.match(/{?\s*(\w+)/)?.[1];
-    return ALLOWED_MUTATIONS.includes(mutationName);
-  }
-
-  return false;
+  const obj = gql`${query}`;
+  return obj.definitions
+    .filter(definition => definition.kind === 'OperationDefinition')
+    .every(definition => {
+      if (definition.operation === 'query') {
+        return definition.selectionSet.selections.every(selection =>
+          ALLOWED_QUERIES.some(allowedQuery => selection.name.value === allowedQuery)
+        );
+      } else if (definition.operation === 'mutation') {
+        return definition.selectionSet.selections.every(selection =>
+          ALLOWED_MUTATIONS.some(allowedMutation => selection.name.value === allowedMutation)
+        );
+      }
+      return false;
+    });
 };
 
 const buildResponse = (status, body, headers = {}) => {
@@ -81,20 +78,26 @@ const getShopAccessToken = async (encryptedAccessToken) => {
 };
 
 module.exports.main = async (event) => {
-  const proxyToken = event.headers['X-Shopify-Access-Token'];
+  const proxyToken = event.headers['x-shopify-access-token'] || event.headers['X-Shopify-Access-Token'];
+  const shopifyDomain = event.headers['x-shopify-shop-domain'] || event.headers['X-Shopify-Shop-Domain'];
 
   if (!proxyToken) {
+    console.error('Missing X-Shopify-Access-Token header');
     return buildResponse(400, { error: 'Missing X-Shopify-Access-Token header' });
+  }
+  if (!shopifyDomain) {
+    console.error('Missing X-Shopify-Shop-Domain header');
+    return buildResponse(400, { error: 'Missing X-Shopify-Shop-Domain header' });
   }
 
   try {
-    const { shopify_access_token, shopify_domain } = await getShopAccessToken(proxyToken);
+    const shopify_access_token = await getShopAccessToken(proxyToken);
 
     if (!isOperationAllowed(event.body)) {
       return buildResponse(403, { error: 'Operation not allowed' });
     }
 
-    const url = `https://${shopify_domain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`;
+    const url = `https://${shopifyDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`;
     const shopifyResponse = await fetch(url,
       {
         method: 'POST',

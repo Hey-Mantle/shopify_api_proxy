@@ -9,6 +9,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "graphql-tag": "^2.12.6",
     "mysql2": "^3.11.3"
   },
   "devDependencies": {
