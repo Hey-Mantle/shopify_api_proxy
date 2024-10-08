@@ -1,0 +1,22 @@
+service: shopify-api-proxy
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: us-east-1
+  stage: production
+  versionFunctions: false
+  environment:
+    NODE_ENV: production
+    ENCRYPTION_KEY: ${env:ENCRYPTION_KEY}
+
+functions:
+  graphql:
+    handler: index.main
+    memorySize: 128
+    timeout: 30
+    description: Shopify GraphQL API Proxy for Mantle
+    events:
+      - http:
+          path: graphql
+          method: post

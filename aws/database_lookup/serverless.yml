@@ -3,7 +3,6 @@ service: shopify-api-proxy
 provider:
   name: aws
   runtime: nodejs18.x
-  # profile: mantle
   region: us-east-1
   stage: production
   versionFunctions: false

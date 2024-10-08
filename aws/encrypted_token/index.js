@@ -1,8 +1,21 @@
 'use strict';
 
-const mysql = require('mysql2/promise');
+const crypto = require('crypto');
 
 const SHOPIFY_API_VERSION = '2024-10';
+
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY; // This should be a shared secret between your app and the proxy
+/*
+  Encrypt the token with a aes-256-cbc cipher, for example:
+
+  function encryptData(plaintext) {
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
+    let encrypted = cipher.update(plaintext, 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+    return `${iv.toString('hex')}:${encrypted}`;
+  }
+*/
 
 const ALLOWED_QUERIES = [
   'shop',
@@ -57,27 +70,21 @@ const buildResponse = (status, body, headers = {}) => {
   };
 };
 
-const getShopAccessToken = async (shopToken) => {
-  const connection = await mysql.createConnection(process.env.DATABASE_URL);
-  try {
-    const [rows] = await connection.execute(
-      'SELECT shopify_access_token, shopify_domain FROM shops WHERE proxy_shop_token = ?',
-      [shopToken]
-    );
-    if (rows.length === 0) {
-      throw new Error('Shop not found');
-    }
-    return rows[0];
-  } finally {
-    await connection.end();
-  }
+
+const getShopAccessToken = async (encryptedAccessToken) => {
+  const [ivHex, encrypted] = encryptedAccessToken.split(':');
+  const iv = Buffer.from(ivHex, 'hex');
+  const decipher = crypto.createDecipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
+  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+  return decrypted;
 };
 
 module.exports.main = async (event) => {
-  const proxyToken = event.headers['X-Proxy-Shop-Token'];
+  const proxyToken = event.headers['X-Shopify-Access-Token'];
 
   if (!proxyToken) {
-    return buildResponse(400, { error: 'Missing X-Proxy-Shop-Token header' });
+    return buildResponse(400, { error: 'Missing X-Shopify-Access-Token header' });
   }
 
   try {
