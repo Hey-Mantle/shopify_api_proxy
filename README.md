@@ -2,6 +2,8 @@
 
 This repo serves as a set of example proxy endpoint implementations for the Shopify Admin GraphQL API that you can use to restrict access to only allow certain queries and mutations when using the Mantle App API.
 
+Contact support@heymantle.com if you want to use this with your apps on Mantle.
+
 ## Proxy access token
 
 To use this, all `POST /identify` requests to the Mantle App API should include an `accessToken` parameter with a generated/encrypted proxy access token from your app. This token should be something you can look up from this proxy to get the shop's real Shopify access token to use on the request to Shopify. This token should be a cryptographically-secure random string generated for each shop or a strongly encrypted version of the real token.
